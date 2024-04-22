@@ -112,6 +112,7 @@ async def secrets_index(datasette, request):
             {
                 "secrets": secrets,
             },
+            request=request
         )
     )
 
@@ -174,7 +175,7 @@ async def secrets_update(datasette, request):
             ),
         )
         datasette.add_message(request, "Secret {} updated".format(secret_name))
-        return Response.redirect(request.path)
+        return Response.redirect(datasette.urls.path("/-/secrets"))
 
     return Response.html(
         await datasette.render_template(

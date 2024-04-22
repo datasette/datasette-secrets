@@ -71,6 +71,8 @@ async def test_set_secret(ds):
         cookies=cookies,
         data={"secret": "new-secret-value", "note": "new-note", "csrftoken": csrftoken},
     )
+    assert post_response.status_code == 302
+    assert post_response.headers["Location"] == "/-/secrets"
     internal_db = ds.get_internal_database()
     secrets = await internal_db.execute("select * from datasette_secrets")
     rows = [dict(r) for r in secrets.rows]
@@ -105,6 +107,8 @@ async def test_set_secret(ds):
         cookies=cookies,
         data={"secret": "updated-secret-value", "note": "", "csrftoken": csrftoken},
     )
+    assert post_response2.status_code == 302
+    assert post_response2.headers["Location"] == "/-/secrets"
     secrets2 = await internal_db.execute("select * from datasette_secrets")
     rows2 = [dict(r) for r in secrets2.rows]
     assert len(rows2) == 2
