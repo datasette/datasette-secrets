@@ -98,3 +98,35 @@ async def test_set_secret(ds):
     encrypted = rows[0]["encrypted"]
     decrypted = key.decrypt(encrypted)
     assert decrypted == b"new-secret-value"
+
+    # Now let's edit it
+    post_response2 = await ds.client.post(
+        "/-/secrets/EXAMPLE_SECRET",
+        cookies=cookies,
+        data={"secret": "updated-secret-value", "note": "", "csrftoken": csrftoken},
+    )
+    secrets2 = await internal_db.execute("select * from datasette_secrets")
+    rows2 = [dict(r) for r in secrets2.rows]
+    assert len(rows2) == 2
+    # Should be version 1 and version 2
+    versions = {row["version"] for row in rows2}
+    assert versions == {1, 2}
+    # Version 2 should be the latest
+    latest = [row for row in rows2 if row["version"] == 2][0]
+    assert latest == {
+        "id": 2,
+        "name": "EXAMPLE_SECRET",
+        "note": "",
+        "version": 2,
+        "encrypted": ANY,
+        "encryption_key_name": "default",
+        "redacted": None,
+        "created_at": ANY,
+        "created_by": "admin",
+        "updated_at": ANY,
+        "updated_by": "admin",
+        "deleted_at": None,
+        "deleted_by": None,
+        "last_used_at": None,
+        "last_used_by": None,
+    }
