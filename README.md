@@ -18,7 +18,7 @@ datasette install datasette-secrets
 First you will need to generate an encryption key for this plugin to use. Run this command:
 
 ```bash
-datasette secrets generate
+datasette secrets generate-encryption-key
 ```
 Store this secret somewhere secure. It will be used to both encrypt and decrypt secrets stored by this plugin - if you lose it you will not be able to recover your secrets.
 

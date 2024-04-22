@@ -10,7 +10,7 @@ def register_commands(cli):
         "Commands for managing datasette-secrets"
 
     @secrets.command()
-    def generate():
-        "Generate a new secret key"
+    def generate_encryption_key():
+        "Generate a new encryption key for encrypting and decrypting secrets"
         key = Fernet.generate_key()
         click.echo(key.decode("utf-8"))

@@ -5,7 +5,7 @@ from datasette.cli import cli
 
 def test_generate_command():
     runner = CliRunner()
-    result = runner.invoke(cli, ["secrets", "generate"])
+    result = runner.invoke(cli, ["secrets", "generate-encryption-key"])
     assert result.exit_code == 0
     key = result.output.strip()
     key_bytes = key.encode("utf-8")
