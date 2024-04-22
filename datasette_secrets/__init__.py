@@ -73,7 +73,7 @@ async def get_secrets(datasette):
 
 @hookimpl
 def register_secrets():
-    return [{"name": "EXAMPLE_SECRET"}]
+    return [{"name": "EXAMPLE_SECRET"}, {"name": "ANTHROPIC_API_KEY"}]
 
 
 @hookimpl
@@ -105,14 +105,28 @@ def startup(datasette):
 async def secrets_index(datasette, request):
     if not await datasette.permission_allowed(request.actor, "manage-secrets"):
         raise Forbidden("Permission denied")
-    secrets = await get_secrets(datasette)
+    all_secrets = await get_secrets(datasette)
+    db = get_database(datasette)
+    existing_secrets_result = await db.execute(
+        """
+        select name, max(version) as version, updated_at, updated_by, note
+        from datasette_secrets
+        group by name
+        """
+    )
+    existing_secrets = [dict(row) for row in existing_secrets_result.rows]
+    existing_secrets_names = {row["name"] for row in existing_secrets}
+    unset_secrets = [
+        secret for secret in all_secrets if secret["name"] not in existing_secrets_names
+    ]
     return Response.html(
         await datasette.render_template(
             "secrets_index.html",
             {
-                "secrets": secrets,
+                "existing_secrets": existing_secrets,
+                "unset_secrets": unset_secrets,
             },
-            request=request
+            request=request,
         )
     )
 
