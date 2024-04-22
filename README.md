@@ -13,9 +13,18 @@ Install this plugin in the same environment as Datasette.
 ```bash
 datasette install datasette-secrets
 ```
+## Configuration
+
+First you will need to generate an encryption key for this plugin to use. Run this command:
+
+```bash
+datasette secrets generate
+```
+Store this secret somewhere secure. It will be used to both encrypt and decrypt secrets stored by this plugin - if you lose it you will not be able to recover your secrets.
+
 ## Usage
 
-Usage instructions go here.
+TODO
 
 ## Development
 

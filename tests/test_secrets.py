@@ -1,11 +1,15 @@
-from datasette.app import Datasette
-import pytest
+from click.testing import CliRunner
+from cryptography.fernet import Fernet
+from datasette.cli import cli
 
 
-@pytest.mark.asyncio
-async def test_plugin_is_installed():
-    datasette = Datasette(memory=True)
-    response = await datasette.client.get("/-/plugins.json")
-    assert response.status_code == 200
-    installed_plugins = {p["name"] for p in response.json()}
-    assert "datasette-secrets" in installed_plugins
+def test_generate_command():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["secrets", "generate"])
+    assert result.exit_code == 0
+    key = result.output.strip()
+    key_bytes = key.encode("utf-8")
+    # This will throw an exception if key is invalid:
+    key = Fernet(key_bytes)
+    message = b"Secret message"
+    assert key.decrypt(key.encrypt(message)) == message
