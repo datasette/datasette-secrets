@@ -1,6 +1,12 @@
 import click
 from cryptography.fernet import Fernet
-from datasette import hookimpl, Response
+from datasette import hookimpl, Forbidden, Permission, Response
+from datasette.plugins import pm
+from datasette.utils import await_me_maybe
+from . import hookspecs
+
+pm.add_hookspecs(hookspecs)
+
 
 SCHEMA = """
 create table if not exists datasette_secrets (
@@ -44,6 +50,33 @@ def config(datasette):
 
 
 @hookimpl
+def register_permissions(datasette):
+    return [
+        Permission(
+            name="manage-secrets",
+            abbr=None,
+            description="Manage Datasette secrets",
+            takes_database=False,
+            takes_resource=False,
+            default=False,
+        )
+    ]
+
+
+async def get_secrets(datasette):
+    secrets = []
+    for result in pm.hook.register_secrets(datasette=datasette):
+        result = await await_me_maybe(result)
+        secrets.extend(result)
+    return secrets
+
+
+@hookimpl
+def register_secrets():
+    return [{"name": "EXAMPLE_SECRET"}]
+
+
+@hookimpl
 def register_commands(cli):
     @cli.group()
     def secrets():
@@ -69,25 +102,39 @@ def startup(datasette):
     return create_table
 
 
-async def secrets_index():
-    return Response.html("Coming soon")
+async def secrets_index(datasette, request):
+    if not await datasette.permission_allowed(request.actor, "manage-secrets"):
+        raise Forbidden("Permission denied")
+    secrets = await get_secrets(datasette)
+    return Response.html(
+        await datasette.render_template(
+            "secrets_index.html",
+            {
+                "secrets": secrets,
+            },
+        )
+    )
 
 
-async def secrets_add(datasette, request):
+async def secrets_update(datasette, request):
+    if not await datasette.permission_allowed(request.actor, "manage-secrets"):
+        raise Forbidden("Permission denied")
     plugin_config = config(datasette)
     if not plugin_config:
         return Response.html("datasette-secrets has not been configured", status=400)
+
+    secret_name = request.url_vars["secret_name"]
+
     if request.method == "POST":
         data = await request.post_vars()
-        name = data.get("secret_name") or "".strip()
         secret = (data.get("secret") or "").strip()
         note = data.get("note") or ""
-        if not (name and secret):
+        if not secret:
             return Response.html(
                 await datasette.render_template(
-                    "secrets_add.html",
+                    "secrets_update.html",
                     {
-                        "error": "Both name and secret are required",
+                        "error": "secret is required",
                     },
                     request=request,
                 ),
@@ -98,19 +145,41 @@ async def secrets_add(datasette, request):
         encrypted = key.encrypt(secret.encode("utf-8"))
         encryption_key_name = "default"
         db = get_database(datasette)
+        actor_id = request.actor.get("id")
         await db.execute_write(
             """
             insert into datasette_secrets (
-                name, note, encrypted, encryption_key_name, created_at
-            ) values (?, ?, ?, ?, datetime('now'))
+                name, version, note, encrypted, encryption_key_name,
+                created_at, created_by, updated_at, updated_by
+            ) values (
+                ?,
+                coalesce((select max(version) + 1 from datasette_secrets where name = ?), 1),
+                ?,
+                ?,
+                ?,
+                -- created_at, created_by
+                datetime('now'), ?,
+                -- updated_at, updated_by
+                datetime('now'), ?
+            )
             """,
-            (name, note, encrypted, encryption_key_name),
+            (
+                secret_name,
+                secret_name,
+                note,
+                encrypted,
+                encryption_key_name,
+                actor_id,
+                actor_id,
+            ),
         )
-        datasette.add_message(request, "Secret {} added".format(name))
+        datasette.add_message(request, "Secret {} updated".format(secret_name))
         return Response.redirect(request.path)
 
     return Response.html(
-        await datasette.render_template("secrets_add.html", request=request)
+        await datasette.render_template(
+            "secrets_update.html", {"secret_name": secret_name}, request=request
+        )
     )
 
 
@@ -118,5 +187,5 @@ async def secrets_add(datasette, request):
 def register_routes():
     return [
         (r"^/-/secrets$", secrets_index),
-        (r"^/-/secrets/add$", secrets_add),
+        (r"^/-/secrets/(?P<secret_name>[^/]+)$", secrets_update),
     ]
