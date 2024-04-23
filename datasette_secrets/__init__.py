@@ -304,3 +304,19 @@ def register_routes():
         (r"^/-/secrets$", secrets_index),
         (r"^/-/secrets/(?P<secret_name>[^/]+)$", secrets_update),
     ]
+
+
+@hookimpl
+def menu_links(datasette, actor):
+    config = get_config(datasette)
+    if not config:
+        return
+
+    async def inner():
+        if not await datasette.permission_allowed(actor, "manage-secrets"):
+            return
+        return [
+            {"href": datasette.urls.path("/-/secrets"), "label": "Manage secrets"},
+        ]
+
+    return inner

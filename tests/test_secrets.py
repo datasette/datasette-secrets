@@ -57,8 +57,11 @@ async def test_permissions(ds, path, verb, data, user):
     response = await method(path, **kwargs)
     if user == "admin":
         assert response.status_code != 403
+        # And check they have the menu item too
+        assert '<a href="/-/secrets">Manage secrets</a>' in response.text
     else:
         assert response.status_code == 403
+        assert '<a href="/-/secrets">Manage secrets</a>' not in response.text
 
 
 @pytest.mark.asyncio
