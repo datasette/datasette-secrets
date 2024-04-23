@@ -114,12 +114,14 @@ To obtain the current value of the secret, use the `await get_secret()` method:
 ```python
 from datasette_secrets import get_secret
 
-secret = await get_secret(datasette, "OPENAI_API_KEY")
+# Third argument is the actor_id, optional
+secret = await get_secret(datasette, "OPENAI_API_KEY", "root")
 ```
 If the Datasette administrator set a `DATASETTE_SECRETS_OPENAI_API_KEY` environment variable, that will be returned.
 
 Otherwise the encrypted value in the database table will be decrypted and returned - or `None` if there is no configured secret.
 
+The `last_used_at` column is updated every time a secret is accessed. The `last_used_by` column will be set to the actor ID passed to `get_secret()`, or `null` if no actor ID was passed.
 
 ## Development
 

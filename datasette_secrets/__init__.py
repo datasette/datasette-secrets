@@ -13,7 +13,7 @@ MAX_NOTE_LENGTH = 100
 pm.add_hookspecs(hookspecs)
 
 
-async def get_secret(datasette, secret_name):
+async def get_secret(datasette, secret_name, actor_id=None):
     secrets_by_name = {secret.name: secret for secret in await get_secrets(datasette)}
     if secret_name not in secrets_by_name:
         return None
@@ -24,16 +24,31 @@ async def get_secret(datasette, secret_name):
     # Now look it up in the database
     config = get_config(datasette)
     db = get_database(datasette)
-    encrypted = (
+    db_secret = (
         await db.execute(
-            "select encrypted from datasette_secrets where name = ? order by version desc limit 1",
+            "select id, encrypted from datasette_secrets where name = ? order by version desc limit 1",
             (secret_name,),
         )
     ).first()
-    if not encrypted:
+    if not db_secret:
         return None
     key = Fernet(config["encryption_key"].encode("utf-8"))
-    decrypted = key.decrypt(encrypted["encrypted"])
+    decrypted = key.decrypt(db_secret["encrypted"])
+    # Update the last used timestamp and actor_id
+    params = (actor_id, db_secret["id"])
+    if not actor_id:
+        params = (db_secret["id"],)
+    await db.execute_write(
+        """
+        update datasette_secrets
+        set last_used_at = datetime('now'),
+            last_used_by = {}
+        where id = ?
+        """.format(
+            "?" if actor_id else "null"
+        ),
+        params,
+    )
     return decrypted.decode("utf-8")
 
 

@@ -145,6 +145,11 @@ async def test_get_secret(ds, monkeypatch):
     get_response = await ds.client.get("/-/secrets/EXAMPLE_SECRET", cookies=cookies)
     csrftoken = get_response.cookies["ds_csrftoken"]
     cookies["ds_csrftoken"] = csrftoken
+    db = ds.get_internal_database()
+    # Reset state
+    await db.execute_write(
+        "update datasette_secrets set last_used_at = null, last_used_by = null"
+    )
     post_response = await ds.client.post(
         "/-/secrets/EXAMPLE_SECRET",
         cookies=cookies,
@@ -156,7 +161,27 @@ async def test_get_secret(ds, monkeypatch):
     )
     assert post_response.status_code == 302
 
+    assert await get_secret(ds, "EXAMPLE_SECRET", "actor") == "manually-set-secret"
+
+    # Should have updated last_used_at and last_used_by
+    secret = (
+        await db.execute(
+            "select * from datasette_secrets where name = ? order by version desc limit 1",
+            ["EXAMPLE_SECRET"],
+        )
+    ).first()
+    assert secret["last_used_by"] == "actor"
+    assert secret["last_used_at"] is not None
+
+    # Calling again without actor ID should set that to null
     assert await get_secret(ds, "EXAMPLE_SECRET") == "manually-set-secret"
+    secret2 = (
+        await db.execute(
+            "select * from datasette_secrets where name = ? order by version desc limit 1",
+            ["EXAMPLE_SECRET"],
+        )
+    ).first()
+    assert secret2["last_used_by"] is None
 
     # Now over-ride with an environment variable
     monkeypatch.setenv("DATASETTE_SECRETS_EXAMPLE_SECRET", "from env")
