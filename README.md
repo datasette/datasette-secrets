@@ -7,6 +7,15 @@
 
 Manage secrets such as API keys for use with other Datasette plugins
 
+This plugin requires a **Datasette 1.0 alpha** release.
+
+Datasette plugins sometimes need access to secrets, such as API keys used to integrate with tools hosted outside of Datasette - things like geocoders or hosted AI language models.
+
+This plugin provides ways to configure those secrets:
+
+- Secrets can be configured using environment variables, such as `DATASETTE_SECRETS_OPENAI_API_KEY`
+- Secrets can be stored, encrypted, in a SQLite database table which administrator users can then update through the Datasette web interface
+
 ## Installation
 
 Install this plugin in the same environment as Datasette.
@@ -22,9 +31,58 @@ datasette secrets generate-encryption-key
 ```
 Store this secret somewhere secure. It will be used to both encrypt and decrypt secrets stored by this plugin - if you lose it you will not be able to recover your secrets.
 
+Configure the plugin with these these two plugin settings:
+
+```yaml
+plugins:
+  datasette-secrets:
+    encryption_key:
+      $env: DATASETTE_SECRETS_ENCRYPTION_KEY
+    database: name_of_database
+```
+The `encryption_key` setting should be set to the encryption key you generated earlier. You can store it in an environment variable if you prefer.
+
+`database` is the name of the database that the encrypted keys should be stored in. Omit this setting to use the internal database.
+
+### Using the internal database
+
+While the secrets stored in the `datasette_secrets` table are encrypted, we still recommend hiding that table from view.
+
+One way to do that is to keep the table in Datasette's internal database, which is invisible to all users, even users who are logged in.
+
+By default, the internal database is an in-memory database that is reset when Datasette restarts. This is no good for persistent secret storage!
+
+Instead, you should switch Datasette to using an on-disk internal database. You can do this by starting Datasette with the `--internal` option:
+```bash
+datasette data.db --internal internal.db
+```
+Your secrets will be stored in the `datasette_secrets` table in that database file.
+
+### Permissions
+
+Only users with the `manage-secrets` permission will have access to manage secrets through the Datasette web interface.
+
+You can grant that permission to the `root` user (or the user with an ID of your choice) by including this in your `datasette.yml` file:
+
+```yaml
+permissions:
+  manage-secrets:
+    id: root
+```
+Then start Datasette like this (with `--root` to get a URL to login as the root user):
+```bash
+datasette data.db --internal internal.db -c datasette.yml --root
+```
+Alternatively, use the `-s` option to set that setting without creating a configuration file:
+```bash
+datasette data.db --internal internal.db \
+  -s permissions.manage-secrets.id root \
+  --root
+```
+
 ## Usage
 
-TODO
+users with the `manage-secrets` permission will see a new "Manage secrets" link in the Datasette navigation menu. This interface can also be accessed at `/-/secrets`.
 
 ## For plugin authors
 
@@ -37,7 +95,6 @@ Then declare the name and description of any secrets you need using the `registe
 ```python
 from datasette import hookimpl
 from datasette_secrets import Secret
-
 
 @hookimpl
 def register_secrets():
@@ -56,7 +113,6 @@ To obtain the current value of the secret, use the `await get_secret()` method:
 
 ```python
 from datasette_secrets import get_secret
-
 
 secret = await get_secret(datasette, "OPENAI_API_KEY")
 ```
