@@ -13,22 +13,34 @@ MAX_NOTE_LENGTH = 100
 pm.add_hookspecs(hookspecs)
 
 
+async def get_secret(datasette, secret_name):
+    secrets_by_name = {secret.name: secret for secret in await get_secrets(datasette)}
+    if secret_name not in secrets_by_name:
+        return None
+    # Is it an environment secret?
+    env_var = "DATASETTE_SECRETS_{}".format(secret_name)
+    if os.environ.get(env_var):
+        return os.environ[env_var]
+    # Now look it up in the database
+    config = get_config(datasette)
+    db = get_database(datasette)
+    encrypted = (
+        await db.execute(
+            "select encrypted from datasette_secrets where name = ? order by version desc limit 1",
+            (secret_name,),
+        )
+    ).first()
+    if not encrypted:
+        return None
+    key = Fernet(config["encryption_key"].encode("utf-8"))
+    decrypted = key.decrypt(encrypted["encrypted"])
+    return decrypted.decode("utf-8")
+
+
 @dataclasses.dataclass
 class Secret:
     name: str
     description_html: Optional[str] = None
-    is_environment: bool = False
-    is_set_in_database: bool = False
-    version: Optional[int] = None
-    note: Optional[str] = None
-    updated_at: Optional[str] = None
-    updated_by: Optional[str] = None
-    created_at: Optional[str] = None
-    created_by: Optional[str] = None
-    deleted_at: Optional[str] = None
-    deleted_by: Optional[str] = None
-    last_used_at: Optional[str] = None
-    last_used_by: Optional[str] = None
 
 
 SCHEMA = """
@@ -60,7 +72,7 @@ def get_database(datasette):
     return datasette.get_database(database)
 
 
-def config(datasette):
+def get_config(datasette):
     plugin_config = datasette.plugin_config("datasette-secrets") or {}
     encryption_key = plugin_config.get("encryption-key")
     database = plugin_config.get("database") or "_internal"
@@ -122,7 +134,7 @@ def register_commands(cli):
 
 @hookimpl
 def startup(datasette):
-    plugin_config = config(datasette)
+    plugin_config = get_config(datasette)
     if not plugin_config:
         return
     db = get_database(datasette)
@@ -179,7 +191,7 @@ async def secrets_index(datasette, request):
 async def secrets_update(datasette, request):
     if not await datasette.permission_allowed(request.actor, "manage-secrets"):
         raise Forbidden("Permission denied")
-    plugin_config = config(datasette)
+    plugin_config = get_config(datasette)
     if not plugin_config:
         return Response.html("datasette-secrets has not been configured", status=400)
 

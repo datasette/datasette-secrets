@@ -2,6 +2,7 @@ from click.testing import CliRunner
 from cryptography.fernet import Fernet
 from datasette.app import Datasette
 from datasette.cli import cli
+from datasette_secrets import get_secret
 import pytest
 from unittest.mock import ANY
 
@@ -134,3 +135,29 @@ async def test_set_secret(ds):
         "last_used_at": None,
         "last_used_by": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_get_secret(ds, monkeypatch):
+    # First set it manually
+    cookies = {"ds_actor": ds.client.actor_cookie({"id": "admin"})}
+    get_response = await ds.client.get("/-/secrets/EXAMPLE_SECRET", cookies=cookies)
+    csrftoken = get_response.cookies["ds_csrftoken"]
+    cookies["ds_csrftoken"] = csrftoken
+    post_response = await ds.client.post(
+        "/-/secrets/EXAMPLE_SECRET",
+        cookies=cookies,
+        data={
+            "secret": "manually-set-secret",
+            "note": "new-note",
+            "csrftoken": csrftoken,
+        },
+    )
+    assert post_response.status_code == 302
+
+    assert await get_secret(ds, "EXAMPLE_SECRET") == "manually-set-secret"
+
+    # Now over-ride with an environment variable
+    monkeypatch.setenv("DATASETTE_SECRETS_EXAMPLE_SECRET", "from env")
+
+    assert await get_secret(ds, "EXAMPLE_SECRET") == "from env"
