@@ -4,8 +4,11 @@ import dataclasses
 from datasette import hookimpl, Forbidden, Permission, Response
 from datasette.plugins import pm
 from datasette.utils import await_me_maybe
+import os
 from typing import Optional
 from . import hookspecs
+
+MAX_NOTE_LENGTH = 100
 
 pm.add_hookspecs(hookspecs)
 
@@ -14,6 +17,18 @@ pm.add_hookspecs(hookspecs)
 class Secret:
     name: str
     description_html: Optional[str] = None
+    is_environment: bool = False
+    is_set_in_database: bool = False
+    version: Optional[int] = None
+    note: Optional[str] = None
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+    created_at: Optional[str] = None
+    created_by: Optional[str] = None
+    deleted_at: Optional[str] = None
+    deleted_by: Optional[str] = None
+    last_used_at: Optional[str] = None
+    last_used_by: Optional[str] = None
 
 
 SCHEMA = """
@@ -76,8 +91,9 @@ async def get_secrets(datasette):
     for result in pm.hook.register_secrets(datasette=datasette):
         result = await await_me_maybe(result)
         secrets.extend(result)
-    if not secrets:
-        secrets.append(Secret("EXAMPLE_SECRET", "An example secret"))
+    # if not secrets:
+    secrets.append(Secret("EXAMPLE_SECRET", "An example secret"))
+
     return secrets
 
 
@@ -121,25 +137,39 @@ async def secrets_index(datasette, request):
     if not await datasette.permission_allowed(request.actor, "manage-secrets"):
         raise Forbidden("Permission denied")
     all_secrets = await get_secrets(datasette)
+
+    environment_secrets = []
+    for secret in all_secrets:
+        if os.environ.get("DATASETTE_SECRETS_{}".format(secret.name)):
+            environment_secrets.append(secret)
+    environment_secrets_names = {secret.name for secret in environment_secrets}
+
     db = get_database(datasette)
     existing_secrets_result = await db.execute(
         """
         select name, max(version) as version, updated_at, updated_by, note
         from datasette_secrets
+        where name not in ({})
         group by name
-        """
+        """.format(
+            ", ".join("?" for _ in environment_secrets_names)
+        ),
+        list(environment_secrets_names),
     )
-    existing_secrets = [dict(row) for row in existing_secrets_result.rows]
-    existing_secrets_names = {row["name"] for row in existing_secrets}
+    existing_secrets = {row["name"]: dict(row) for row in existing_secrets_result.rows}
     unset_secrets = [
-        secret for secret in all_secrets if secret.name not in existing_secrets_names
+        secret
+        for secret in all_secrets
+        if secret.name not in existing_secrets
+        and secret.name not in environment_secrets_names
     ]
     return Response.html(
         await datasette.render_template(
             "secrets_index.html",
             {
-                "existing_secrets": existing_secrets,
+                "existing_secrets": existing_secrets.values(),
                 "unset_secrets": unset_secrets,
+                "environment_secrets": environment_secrets,
             },
             request=request,
         )
@@ -163,28 +193,54 @@ async def secrets_update(datasette, request):
             secret_details = s
             break
 
+    db = get_database(datasette)
+
+    current_secret = (
+        await db.execute(
+            """
+        select * from datasette_secrets
+        where name = ?
+        order by version desc limit 1
+        """,
+            (secret_name,),
+        )
+    ).first()
+
     if request.method == "POST":
         data = await request.post_vars()
         secret = (data.get("secret") or "").strip()
         note = data.get("note") or ""
+        if len(note) > MAX_NOTE_LENGTH:
+            datasette.add_message(request, "Note is too long", datasette.ERROR)
+            return Response.redirect(request.path)
+
+        # Secret is required if adding
         if not secret:
-            return Response.html(
-                await datasette.render_template(
-                    "secrets_update.html",
-                    {
-                        "error": "secret is required",
-                        "secret_name": secret_name,
-                        "secret_details": secret_details,
-                    },
-                    request=request,
-                ),
-                status=400,
-            )
+            if current_secret:
+                # Update the note
+                await db.execute_write(
+                    """
+                    update datasette_secrets
+                    set note = ?,
+                        updated_at = datetime('now'),
+                        updated_by = ?
+                    where id = ?
+                    """,
+                    (note, request.actor.get("id"), current_secret["id"]),
+                )
+                if note and note != current_secret["note"]:
+                    datasette.add_message(
+                        request, "Note updated: {}".format(secret_name)
+                    )
+                return Response.redirect(datasette.urls.path("/-/secrets"))
+            else:
+                datasette.add_message(request, "Secret is required", datasette.ERROR)
+                return Response.redirect(request.path)
+
         encryption_key = plugin_config["encryption_key"]
         key = Fernet(encryption_key.encode("utf-8"))
         encrypted = key.encrypt(secret.encode("utf-8"))
         encryption_key_name = "default"
-        db = get_database(datasette)
         actor_id = request.actor.get("id")
         await db.execute_write(
             """
@@ -219,7 +275,12 @@ async def secrets_update(datasette, request):
     return Response.html(
         await datasette.render_template(
             "secrets_update.html",
-            {"secret_name": secret_name, "secret_details": secret_details},
+            {
+                "secret_name": secret_name,
+                "secret_details": secret_details,
+                "current_secret": current_secret,
+                "max_note_length": MAX_NOTE_LENGTH,
+            },
             request=request,
         )
     )
