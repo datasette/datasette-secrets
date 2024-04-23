@@ -1,11 +1,19 @@
 import click
 from cryptography.fernet import Fernet
+import dataclasses
 from datasette import hookimpl, Forbidden, Permission, Response
 from datasette.plugins import pm
 from datasette.utils import await_me_maybe
+from typing import Optional
 from . import hookspecs
 
 pm.add_hookspecs(hookspecs)
+
+
+@dataclasses.dataclass
+class Secret:
+    name: str
+    description_html: Optional[str] = None
 
 
 SCHEMA = """
@@ -68,12 +76,19 @@ async def get_secrets(datasette):
     for result in pm.hook.register_secrets(datasette=datasette):
         result = await await_me_maybe(result)
         secrets.extend(result)
+    if not secrets:
+        secrets.append(Secret("EXAMPLE_SECRET", "An example secret"))
     return secrets
 
 
 @hookimpl
 def register_secrets():
-    return [{"name": "EXAMPLE_SECRET"}, {"name": "ANTHROPIC_API_KEY"}]
+    return [
+        Secret(
+            "OPENAI_API_KEY",
+            'An OpenAI API key. Get them from <a href="https://platform.openai.com/api-keys">here</a>.',
+        ),
+    ]
 
 
 @hookimpl
@@ -117,7 +132,7 @@ async def secrets_index(datasette, request):
     existing_secrets = [dict(row) for row in existing_secrets_result.rows]
     existing_secrets_names = {row["name"] for row in existing_secrets}
     unset_secrets = [
-        secret for secret in all_secrets if secret["name"] not in existing_secrets_names
+        secret for secret in all_secrets if secret.name not in existing_secrets_names
     ]
     return Response.html(
         await datasette.render_template(
@@ -140,6 +155,14 @@ async def secrets_update(datasette, request):
 
     secret_name = request.url_vars["secret_name"]
 
+    # Try and find a secret matching this name
+    secret_details = None
+    secrets = await get_secrets(datasette)
+    for s in secrets:
+        if s.name == secret_name:
+            secret_details = s
+            break
+
     if request.method == "POST":
         data = await request.post_vars()
         secret = (data.get("secret") or "").strip()
@@ -150,6 +173,8 @@ async def secrets_update(datasette, request):
                     "secrets_update.html",
                     {
                         "error": "secret is required",
+                        "secret_name": secret_name,
+                        "secret_details": secret_details,
                     },
                     request=request,
                 ),
@@ -193,7 +218,9 @@ async def secrets_update(datasette, request):
 
     return Response.html(
         await datasette.render_template(
-            "secrets_update.html", {"secret_name": secret_name}, request=request
+            "secrets_update.html",
+            {"secret_name": secret_name, "secret_details": secret_details},
+            request=request,
         )
     )
 
