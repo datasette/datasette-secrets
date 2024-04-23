@@ -51,7 +51,6 @@ create table if not exists datasette_secrets (
     version integer not null default 1,
     encrypted blob,
     encryption_key_name text not null,
-    redacted text,
     created_at text,
     created_by text,
     updated_at text,
