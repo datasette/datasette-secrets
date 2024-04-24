@@ -102,11 +102,24 @@ from datasette_secrets import Secret
 def register_secrets():
     return [
         Secret(
-            "OPENAI_API_KEY",
-            'An OpenAI API key. Get them from <a href="https://platform.openai.com/api-keys">here</a>.',
+            name="OPENAI_API_KEY",
+            description="An OpenAI API key"
         ),
     ]
 ```
+You can also provide optional `obtain_url` and `obtain_label` fields to link to a page where a user can obtain an API key:
+```python
+@hookimpl
+def register_secrets():
+    return [
+        Secret(
+            name="OPENAI_API_KEY",
+            obtain_url="https://platform.openai.com/api-keys",
+            obtain_label="Get an OpenAI API key"
+        ),
+    ]
+```
+
 The hook can take an optional `datasette` argument. It can return a list or an `async def` function that, when awaited, returns a list.
 
 The list should consist of `Secret()` instances, each with a name and an optional description. The description can contain HTML.

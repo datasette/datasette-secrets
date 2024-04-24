@@ -55,7 +55,9 @@ async def get_secret(datasette, secret_name, actor_id=None):
 @dataclasses.dataclass
 class Secret:
     name: str
-    description_html: Optional[str] = None
+    description: Optional[str] = None
+    obtain_url: Optional[str] = None
+    obtain_label: Optional[str] = None
 
 
 SCHEMA = """
@@ -114,9 +116,14 @@ def register_permissions(datasette):
 
 async def get_secrets(datasette):
     secrets = []
+    seen = set()
     for result in pm.hook.register_secrets(datasette=datasette):
         result = await await_me_maybe(result)
-        secrets.extend(result)
+        for secret in result:
+            if secret.name in seen:
+                continue  # Skip duplicates
+            seen.add(secret.name)
+            secrets.append(secret)
     # if not secrets:
     secrets.append(Secret("EXAMPLE_SECRET", "An example secret"))
 

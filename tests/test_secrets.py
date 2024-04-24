@@ -4,7 +4,7 @@ from datasette import hookimpl
 from datasette.app import Datasette
 from datasette.cli import cli
 from datasette.plugins import pm
-from datasette_secrets import get_secret
+from datasette_secrets import get_secret, Secret
 import pytest
 from unittest.mock import ANY
 
@@ -38,9 +38,52 @@ def use_actors_plugin():
                 for id in actor_ids
             }
 
-    pm.register(ActorPlugin(), name="undo")
+    pm.register(ActorPlugin(), name="ActorPlugin")
     yield
-    pm.unregister(name="undo")
+    pm.unregister(name="ActorPlugin")
+
+
+@pytest.fixture
+def register_multiple_secrets():
+    class SecretOnePlugin:
+        __name__ = "SecretOnePlugin"
+
+        @hookimpl
+        def register_secrets(self):
+            return [
+                Secret(
+                    name="OPENAI_API_KEY",
+                    obtain_url="https://platform.openai.com/api-keys",
+                    obtain_label="Get an OpenAI API key",
+                ),
+                Secret(
+                    name="ANTHROPIC_API_KEY", description="A key for Anthropic's API"
+                ),
+            ]
+
+    class SecretTwoPlugin:
+        __name__ = "SecretTwoPlugin"
+
+        @hookimpl
+        def register_secrets(self):
+            return [
+                Secret(
+                    name="OPENAI_API_KEY",
+                    description="Just a description but should be ignored",
+                ),
+                Secret(
+                    name="OPENCAGE_API_KEY",
+                    description="The OpenCage Geocoder",
+                    obtain_url="https://opencagedata.com/dashboard",
+                    obtain_label="Get an OpenCage API key",
+                ),
+            ]
+
+    pm.register(SecretTwoPlugin(), name="SecretTwoPlugin")
+    pm.register(SecretOnePlugin(), name="SecretOnePlugin")
+    yield
+    pm.unregister(name="SecretOnePlugin")
+    pm.unregister(name="SecretTwoPlugin")
 
 
 @pytest.fixture
@@ -216,3 +259,47 @@ async def test_get_secret(ds, monkeypatch):
     monkeypatch.setenv("DATASETTE_SECRETS_EXAMPLE_SECRET", "from env")
 
     assert await get_secret(ds, "EXAMPLE_SECRET") == "from env"
+
+    # And check that it's shown that way on the /-/secrets page
+    response = await ds.client.get("/-/secrets", cookies=cookies)
+    assert response.status_code == 200
+    expected_html = """
+    <li><strong>EXAMPLE_SECRET</a></strong> - An example secret<br>
+      <span style="font-size: 0.8 em">Set by <code>DATASETTE_SECRETS_EXAMPLE_SECRET</code></span></li>
+    """
+    assert remove_whitespace(expected_html) in remove_whitespace(response.text)
+
+
+@pytest.mark.asyncio
+async def test_secret_index_page(ds, register_multiple_secrets):
+    response = await ds.client.get(
+        "/-/secrets",
+        cookies={
+            "ds_actor": ds.client.actor_cookie({"id": "admin"}),
+        },
+    )
+    assert response.status_code == 200
+    expected_html = """
+    <p style="margin-top: 2em">The following secrets have not been set:</p>
+    <ul>
+        <li><strong><a href="/-/secrets/OPENAI_API_KEY">OPENAI_API_KEY</a></strong>
+        -
+        <a href="https://platform.openai.com/api-keys">Get an OpenAI API key</a>
+        </li>
+        <li><strong><a href="/-/secrets/ANTHROPIC_API_KEY">ANTHROPIC_API_KEY</a></strong>
+        - A key for Anthropic&#39;s API
+        </li>
+        <li><strong><a href="/-/secrets/OPENCAGE_API_KEY">OPENCAGE_API_KEY</a></strong>
+        - The OpenCage Geocoder,
+        <a href="https://opencagedata.com/dashboard">Get an OpenCage API key</a>
+        </li>
+        <li><strong><a href="/-/secrets/EXAMPLE_SECRET">EXAMPLE_SECRET</a></strong>
+        - An example secret
+        </li>
+    </ul>
+    """
+    assert remove_whitespace(expected_html) in remove_whitespace(response.text)
+
+
+def remove_whitespace(s):
+    return " ".join(s.split())
