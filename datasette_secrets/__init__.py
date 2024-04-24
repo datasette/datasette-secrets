@@ -124,16 +124,6 @@ async def get_secrets(datasette):
 
 
 @hookimpl
-def register_secrets():
-    return [
-        Secret(
-            "OPENAI_API_KEY",
-            'An OpenAI API key. Get them from <a href="https://platform.openai.com/api-keys">here</a>.',
-        ),
-    ]
-
-
-@hookimpl
 def register_commands(cli):
     @cli.group()
     def secrets():
