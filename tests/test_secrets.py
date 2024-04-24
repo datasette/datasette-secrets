@@ -4,7 +4,7 @@ from datasette import hookimpl
 from datasette.app import Datasette
 from datasette.cli import cli
 from datasette.plugins import pm
-from datasette_secrets import get_secret, Secret
+from datasette_secrets import get_secret, Secret, startup
 import pytest
 from unittest.mock import ANY
 
@@ -268,6 +268,11 @@ async def test_get_secret(ds, monkeypatch):
       <span style="font-size: 0.8 em">Set by <code>DATASETTE_SECRETS_EXAMPLE_SECRET</code></span></li>
     """
     assert remove_whitespace(expected_html) in remove_whitespace(response.text)
+
+    # Finally it should still work even if the datasette_secrets table is missing
+    await db.execute_write("drop table datasette_secrets")
+    monkeypatch.delenv("DATASETTE_SECRETS_EXAMPLE_SECRET")
+    assert await get_secret(ds, "EXAMPLE_SECRET") is None
 
 
 @pytest.mark.asyncio

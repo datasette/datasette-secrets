@@ -3,7 +3,7 @@ from cryptography.fernet import Fernet
 import dataclasses
 from datasette import hookimpl, Forbidden, Permission, Response
 from datasette.plugins import pm
-from datasette.utils import await_me_maybe
+from datasette.utils import await_me_maybe, sqlite3
 import os
 from typing import Optional
 from . import hookspecs
@@ -24,12 +24,15 @@ async def get_secret(datasette, secret_name, actor_id=None):
     # Now look it up in the database
     config = get_config(datasette)
     db = get_database(datasette)
-    db_secret = (
-        await db.execute(
-            "select id, encrypted from datasette_secrets where name = ? order by version desc limit 1",
-            (secret_name,),
-        )
-    ).first()
+    try:
+        db_secret = (
+            await db.execute(
+                "select id, encrypted from datasette_secrets where name = ? order by version desc limit 1",
+                (secret_name,),
+            )
+        ).first()
+    except sqlite3.OperationalError:
+        return None
     if not db_secret:
         return None
     key = Fernet(config["encryption_key"].encode("utf-8"))
