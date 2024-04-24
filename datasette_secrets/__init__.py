@@ -183,6 +183,16 @@ async def secrets_index(datasette, request):
         list(environment_secrets_names),
     )
     existing_secrets = {row["name"]: dict(row) for row in existing_secrets_result.rows}
+    # Try to turn updated_by into actors
+    actors = await datasette.actors_from_ids(
+        {row["updated_by"] for row in existing_secrets.values() if row["updated_by"]}
+    )
+    for secret in existing_secrets.values():
+        if secret["updated_by"]:
+            actor = actors.get(secret["updated_by"])
+            if actor:
+                display = actor.get("username") or actor.get("name") or actor.get("id")
+                secret["updated_by"] = display
     unset_secrets = [
         secret
         for secret in all_secrets

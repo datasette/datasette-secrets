@@ -1,7 +1,9 @@
 from click.testing import CliRunner
 from cryptography.fernet import Fernet
+from datasette import hookimpl
 from datasette.app import Datasette
 from datasette.cli import cli
+from datasette.plugins import pm
 from datasette_secrets import get_secret
 import pytest
 from unittest.mock import ANY
@@ -19,6 +21,26 @@ def test_generate_command():
     key = Fernet(key_bytes)
     message = b"Secret message"
     assert key.decrypt(key.encrypt(message)) == message
+
+
+@pytest.fixture
+def use_actors_plugin():
+    class ActorPlugin:
+        __name__ = "ActorPlugin"
+
+        @hookimpl
+        def actors_from_ids(self, actor_ids):
+            return {
+                id: {
+                    "id": id,
+                    "username": id.upper(),
+                }
+                for id in actor_ids
+            }
+
+    pm.register(ActorPlugin(), name="undo")
+    yield
+    pm.unregister(name="undo")
 
 
 @pytest.fixture
@@ -65,7 +87,7 @@ async def test_permissions(ds, path, verb, data, user):
 
 
 @pytest.mark.asyncio
-async def test_set_secret(ds):
+async def test_set_secret(ds, use_actors_plugin):
     cookies = {"ds_actor": ds.client.actor_cookie({"id": "admin"})}
     get_response = await ds.client.get("/-/secrets/EXAMPLE_SECRET", cookies=cookies)
     csrftoken = get_response.cookies["ds_csrftoken"]
@@ -103,6 +125,13 @@ async def test_set_secret(ds):
     encrypted = rows[0]["encrypted"]
     decrypted = key.decrypt(encrypted)
     assert decrypted == b"new-secret-value"
+
+    # Check that the listing is as expected, including showing the actor username
+    response = await ds.client.get("/-/secrets", cookies=cookies)
+    assert response.status_code == 200
+    assert "EXAMPLE_SECRET" in response.text
+    assert "new-note" in response.text
+    assert "<td>ADMIN</td>" in response.text
 
     # Now let's edit it
     post_response2 = await ds.client.post(

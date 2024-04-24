@@ -84,6 +84,8 @@ datasette data.db --internal internal.db \
 
 users with the `manage-secrets` permission will see a new "Manage secrets" link in the Datasette navigation menu. This interface can also be accessed at `/-/secrets`.
 
+The page with the list of secrets will show the user who last updated each secret. This will use the [actors_from_ids()](https://docs.datasette.io/en/latest/plugin_hooks.html#actors-from-ids-datasette-actor-ids) mechanism, displaying the actor's `username` if available, otherwise the `name`, otherwise the `id`.
+
 ## For plugin authors
 
 Plugins can depend on this plugin if they want to implement secrets.
