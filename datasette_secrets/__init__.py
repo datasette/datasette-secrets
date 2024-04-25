@@ -23,6 +23,9 @@ async def get_secret(datasette, secret_name, actor_id=None):
         return os.environ[env_var]
     # Now look it up in the database
     config = get_config(datasette)
+    if config is None:
+        return None
+    encryption_key = config["encryption_key"]
     db = get_database(datasette)
     try:
         db_secret = (
@@ -35,7 +38,7 @@ async def get_secret(datasette, secret_name, actor_id=None):
         return None
     if not db_secret:
         return None
-    key = Fernet(config["encryption_key"].encode("utf-8"))
+    key = Fernet(encryption_key.encode("utf-8"))
     decrypted = key.decrypt(db_secret["encrypted"])
     # Update the last used timestamp and actor_id
     params = (actor_id, db_secret["id"])
