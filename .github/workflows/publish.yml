@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubicloud
     strategy:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
@@ -28,7 +28,7 @@ jobs:
       run: |
         pytest
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubicloud
     needs: [test]
     environment: release
     permissions:
