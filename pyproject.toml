@@ -1,6 +1,6 @@
 [project]
 name = "datasette-secrets"
-version = "0.1a4"
+version = "0.2"
 description = "Manage secrets such as API keys for use with other Datasette plugins"
 readme = "README.md"
 authors = [{name = "Datasette"}]
