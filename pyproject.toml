@@ -11,7 +11,7 @@ classifiers=[
 ]
 requires-python = ">=3.8"
 dependencies = [
-    "datasette>=1.0a13",
+    "datasette",
     "cryptography"
 ]
 
@@ -25,7 +25,7 @@ CI = "https://github.com/datasette/datasette-secrets/actions"
 secrets = "datasette_secrets"
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-asyncio"]
+test = ["pytest", "pytest-asyncio", "datasette-test>=0.3.2"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
