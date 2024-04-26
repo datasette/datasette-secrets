@@ -1,14 +1,21 @@
 from click.testing import CliRunner
 from cryptography.fernet import Fernet
 from datasette import hookimpl
-from datasette.app import Datasette
 from datasette.cli import cli
 from datasette.plugins import pm
+from datasette_test import Datasette, actor_cookie
 from datasette_secrets import get_secret, Secret, startup, get_config
 import pytest
 from unittest.mock import ANY
 
 TEST_ENCRYPTION_KEY = "-LujHtwFWGaBpznrV1zduoZBmCnMOW7J0H5hmeXgAVo="
+
+
+def get_internal_database(ds):
+    if hasattr(ds, "get_internal_database"):
+        return ds.get_internal_database()
+    else:
+        return ds.get_database("_internal")
 
 
 def test_generate_command():
@@ -89,15 +96,13 @@ def register_multiple_secrets():
 @pytest.fixture
 def ds():
     return Datasette(
-        config={
-            "plugins": {
-                "datasette-secrets": {
-                    "database": "_internal",
-                    "encryption-key": TEST_ENCRYPTION_KEY,
-                }
-            },
-            "permissions": {"manage-secrets": {"id": "admin"}},
-        }
+        plugin_config={
+            "datasette-secrets": {
+                "database": "_internal",
+                "encryption-key": TEST_ENCRYPTION_KEY,
+            }
+        },
+        permissions={"manage-secrets": {"id": "admin"}},
     )
 
 
@@ -115,7 +120,7 @@ async def test_permissions(ds, path, verb, data, user):
     kwargs = {}
     if user:
         kwargs["cookies"] = {
-            "ds_actor": ds.client.actor_cookie({"id": user}),
+            "ds_actor": actor_cookie(ds, {"id": user}),
         }
     if data:
         kwargs["data"] = data
@@ -131,7 +136,7 @@ async def test_permissions(ds, path, verb, data, user):
 
 @pytest.mark.asyncio
 async def test_set_secret(ds, use_actors_plugin):
-    cookies = {"ds_actor": ds.client.actor_cookie({"id": "admin"})}
+    cookies = {"ds_actor": actor_cookie(ds, {"id": "admin"})}
     get_response = await ds.client.get("/-/secrets/EXAMPLE_SECRET", cookies=cookies)
     csrftoken = get_response.cookies["ds_csrftoken"]
     cookies["ds_csrftoken"] = csrftoken
@@ -142,7 +147,7 @@ async def test_set_secret(ds, use_actors_plugin):
     )
     assert post_response.status_code == 302
     assert post_response.headers["Location"] == "/-/secrets"
-    internal_db = ds.get_internal_database()
+    internal_db = get_internal_database(ds)
     secrets = await internal_db.execute("select * from datasette_secrets")
     rows = [dict(r) for r in secrets.rows]
     assert rows == [
@@ -174,7 +179,12 @@ async def test_set_secret(ds, use_actors_plugin):
     assert response.status_code == 200
     assert "EXAMPLE_SECRET" in response.text
     assert "new-note" in response.text
-    assert "<td>ADMIN</td>" in response.text
+
+    if hasattr(ds, "actors_from_ids"):
+        assert "<td>ADMIN</td>" in response.text
+    else:
+        # Pre 1.0, so can't use that mechanism
+        assert "<td>admin</td>" in response.text
 
     # Now let's edit it
     post_response2 = await ds.client.post(
@@ -213,11 +223,11 @@ async def test_set_secret(ds, use_actors_plugin):
 @pytest.mark.asyncio
 async def test_get_secret(ds, monkeypatch):
     # First set it manually
-    cookies = {"ds_actor": ds.client.actor_cookie({"id": "admin"})}
+    cookies = {"ds_actor": actor_cookie(ds, {"id": "admin"})}
     get_response = await ds.client.get("/-/secrets/EXAMPLE_SECRET", cookies=cookies)
     csrftoken = get_response.cookies["ds_csrftoken"]
     cookies["ds_csrftoken"] = csrftoken
-    db = ds.get_internal_database()
+    db = get_internal_database(ds)
     # Reset state
     await db.execute_write(
         "update datasette_secrets set last_used_at = null, last_used_by = null"
@@ -288,7 +298,7 @@ async def test_secret_index_page(ds, register_multiple_secrets):
     response = await ds.client.get(
         "/-/secrets",
         cookies={
-            "ds_actor": ds.client.actor_cookie({"id": "admin"}),
+            "ds_actor": actor_cookie(ds, {"id": "admin"}),
         },
     )
     assert response.status_code == 200

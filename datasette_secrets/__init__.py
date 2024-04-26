@@ -1,7 +1,7 @@
 import click
 from cryptography.fernet import Fernet
 import dataclasses
-from datasette import hookimpl, Forbidden, Permission, Response
+from datasette import hookimpl, Forbidden, Response
 from datasette.plugins import pm
 from datasette.utils import await_me_maybe, sqlite3
 import os
@@ -89,7 +89,7 @@ create table if not exists datasette_secrets (
 def get_database(datasette):
     plugin_config = datasette.plugin_config("datasette-secrets") or {}
     database = plugin_config.get("database") or "_internal"
-    if database == "_internal":
+    if database == "_internal" and hasattr(datasette, "get_internal_database"):
         return datasette.get_internal_database()
     return datasette.get_database(database)
 
@@ -108,6 +108,8 @@ def get_config(datasette):
 
 @hookimpl
 def register_permissions(datasette):
+    from datasette import Permission
+
     return [
         Permission(
             name="manage-secrets",
@@ -187,15 +189,22 @@ async def secrets_index(datasette, request):
     )
     existing_secrets = {row["name"]: dict(row) for row in existing_secrets_result.rows}
     # Try to turn updated_by into actors
-    actors = await datasette.actors_from_ids(
-        {row["updated_by"] for row in existing_secrets.values() if row["updated_by"]}
-    )
-    for secret in existing_secrets.values():
-        if secret["updated_by"]:
-            actor = actors.get(secret["updated_by"])
-            if actor:
-                display = actor.get("username") or actor.get("name") or actor.get("id")
-                secret["updated_by"] = display
+    if hasattr(datasette, "actors_from_ids"):
+        actors = await datasette.actors_from_ids(
+            {
+                row["updated_by"]
+                for row in existing_secrets.values()
+                if row["updated_by"]
+            }
+        )
+        for secret in existing_secrets.values():
+            if secret["updated_by"]:
+                actor = actors.get(secret["updated_by"])
+                if actor:
+                    display = (
+                        actor.get("username") or actor.get("name") or actor.get("id")
+                    )
+                    secret["updated_by"] = display
     unset_secrets = [
         secret
         for secret in all_secrets
