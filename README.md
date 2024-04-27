@@ -36,7 +36,7 @@ Configure the plugin with these these two plugin settings:
 ```yaml
 plugins:
   datasette-secrets:
-    encryption_key:
+    encryption-key:
       $env: DATASETTE_SECRETS_ENCRYPTION_KEY
     database: name_of_database
 ```
