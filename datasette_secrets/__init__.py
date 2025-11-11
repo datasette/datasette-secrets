@@ -2,6 +2,7 @@ import click
 from cryptography.fernet import Fernet
 import dataclasses
 from datasette import hookimpl, Forbidden, Response
+from datasette.permissions import Action
 from datasette.plugins import pm
 from datasette.utils import await_me_maybe, sqlite3
 import os
@@ -107,17 +108,11 @@ def get_config(datasette):
 
 
 @hookimpl
-def register_permissions(datasette):
-    from datasette import Permission
-
+def register_actions(datasette):
     return [
-        Permission(
+        Action(
             name="manage-secrets",
-            abbr=None,
             description="Manage Datasette secrets",
-            takes_database=False,
-            takes_resource=False,
-            default=False,
         )
     ]
 
@@ -165,7 +160,10 @@ def startup(datasette):
 
 
 async def secrets_index(datasette, request):
-    if not await datasette.permission_allowed(request.actor, "manage-secrets"):
+    if not await datasette.allowed(
+        action="manage-secrets",
+        actor=request.actor,
+    ):
         raise Forbidden("Permission denied")
     all_secrets = await get_secrets(datasette)
 
@@ -225,7 +223,10 @@ async def secrets_index(datasette, request):
 
 
 async def secrets_update(datasette, request):
-    if not await datasette.permission_allowed(request.actor, "manage-secrets"):
+    if not await datasette.allowed(
+        action="manage-secrets",
+        actor=request.actor,
+    ):
         raise Forbidden("Permission denied")
     plugin_config = get_config(datasette)
     if not plugin_config:
@@ -349,7 +350,10 @@ def menu_links(datasette, actor):
         return
 
     async def inner():
-        if not await datasette.permission_allowed(actor, "manage-secrets"):
+        if not await datasette.allowed(
+            action="manage-secrets",
+            actor=actor,
+        ):
             return
         return [
             {"href": datasette.urls.path("/-/secrets"), "label": "Manage secrets"},

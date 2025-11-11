@@ -4,14 +4,13 @@ version = "0.2"
 description = "Manage secrets such as API keys for use with other Datasette plugins"
 readme = "README.md"
 authors = [{name = "Datasette"}]
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 classifiers=[
-    "Framework :: Datasette",
-    "License :: OSI Approved :: Apache Software License"
+    "Framework :: Datasette"
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
-    "datasette",
+    "datasette>=1.0a21",
     "cryptography"
 ]
 
